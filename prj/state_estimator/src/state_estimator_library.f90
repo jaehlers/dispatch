@@ -222,6 +222,7 @@ module state_estimator_library
     allocate(config(context)%kalman_filter%C(config(context)%kalman_filter%ny,config(context)%kalman_filter%nx), source=0.0d0)
     allocate(config(context)%kalman_filter%D(config(context)%kalman_filter%ny,config(context)%kalman_filter%nu), source=0.0d0)
     allocate(config(context)%kalman_filter%x0(config(context)%kalman_filter%nx), source=0.0d0)
+    allocate(config(context)%kalman_filter%xbar(config(context)%kalman_filter%nx), source=0.0d0)
     allocate(config(context)%kalman_filter%xhat(config(context)%kalman_filter%nx), source=0.0d0)
     allocate(config(context)%kalman_filter%u0(config(context)%kalman_filter%nu), source=0.0d0)
     allocate(config(context)%kalman_filter%y0(config(context)%kalman_filter%ny), source=0.0d0)
