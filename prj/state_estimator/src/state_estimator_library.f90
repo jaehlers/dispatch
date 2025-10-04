@@ -206,10 +206,6 @@ module state_estimator_library
     config(context)%kalman_filter%nu = size(config(context)%kalman_filter%Bs, 2)
     config(context)%kalman_filter%ny = size(config(context)%kalman_filter%Cs, 1)
     config(context)%kalman_filter%no = size(config(context)%kalman_filter%operating_points, 1)
-    if (config(context)%n_offers .ne. 2 * config(context)%kalman_filter%nx) then
-      error = fail("Incorrect number of offered signals (" // itoa(config(context)%n_offers) // "); nx=" // itoa(config(context)%kalman_filter%nx))
-      exit try
-    end if
     allocate(config(context)%kalman_filter%i_y(config(context)%kalman_filter%ny))
     allocate(config(context)%kalman_filter%i_u(config(context)%kalman_filter%nu))
     allocate(config(context)%kalman_filter%A(config(context)%kalman_filter%nx,config(context)%kalman_filter%nx), source=0.0d0)

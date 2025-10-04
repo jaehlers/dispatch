@@ -132,7 +132,7 @@ module scheduled_matrix_gain_library
         call hdf5_read_array_auto(fid, "/scheduled_gain/operating_points", config(context)%gain%operating_points, error)
         if (allocated(error)) exit data_read
         ! get K
-        call hdf5_read_array_auto(fid, "/scheduled_gain/K", config(context)%gain%Ks, error)
+        call hdf5_read_array_auto(fid, "/scheduled_gain/gain", config(context)%gain%Ks, error)
         if (allocated(error)) exit data_read
       end block data_read
       ! handle any errors that occurred during data reading
