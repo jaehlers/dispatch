@@ -33,11 +33,12 @@ module state_estimator_library
     integer :: io_switch_threshold = 0                   ! number of sample steps the operating index is allowed to differ from the current index, before it is switched
     integer, allocatable :: i_y(:)                       ! indices of the measurement signals within the input vector
     integer, allocatable :: i_u(:)                       ! indices of the control signals within the input vector
-    integer :: i_ss = 0                                  ! index of the scheduling signal within the input vector
-    real(8), allocatable :: operating_points(:)          ! vector of scheduling signal values at which linearized models are defined
+    integer :: i_op = 0                                  ! index of the operating point signal within the input vector
+    real(8), allocatable :: operating_points(:)          ! vector of operating point signal values at which linearized models are defined
     type(string_container_t), allocatable :: measurement_signals(:) ! names of modeled measurement signals
     type(string_container_t), allocatable :: control_signals(:)     ! names of modeled control signals
-    character(len=:), allocatable :: scheduling_signal   ! name of the scheduling signal
+    type(string_container_t), allocatable :: state_signals(:)       ! names of modeled state signals
+    character(len=:), allocatable :: operating_point_signal         ! name of the operating point signal
     real(8), allocatable :: A(:,:)                       ! the currently-active A matrix
     real(8), allocatable :: B(:,:)                       ! the currently-active B matrix
     real(8), allocatable :: C(:,:)                       ! the currently-active C matrix
@@ -45,20 +46,20 @@ module state_estimator_library
     real(8), allocatable :: Q(:,:)                       ! the currently-active Q matrix (process noise covariance)
     real(8), allocatable :: R(:,:)                       ! the currently-active R matrix (measurement noise covariance)
     real(8), allocatable :: invR(:,:)                    ! the inverse of the currently-active R matrix (measurement noise covariance)
-    real(8), allocatable :: As(:,:,:)                    ! A matrices at all prescribed scheduling signal values
-    real(8), allocatable :: Bs(:,:,:)                    ! B matrices at all prescribed scheduling signal values
-    real(8), allocatable :: Cs(:,:,:)                    ! C matrices at all prescribed scheduling signal values
-    real(8), allocatable :: Ds(:,:,:)                    ! D matrices at all prescribed scheduling signal values
-    real(8), allocatable :: Qs(:,:,:)                    ! Q matrices at all prescribed scheduling signal values
-    real(8), allocatable :: Rs(:,:,:)                    ! R matrices at all prescribed scheduling signal values
+    real(8), allocatable :: As(:,:,:)                    ! A matrices at all prescribed operating point signal values
+    real(8), allocatable :: Bs(:,:,:)                    ! B matrices at all prescribed operating point signal values
+    real(8), allocatable :: Cs(:,:,:)                    ! C matrices at all prescribed operating point signal values
+    real(8), allocatable :: Ds(:,:,:)                    ! D matrices at all prescribed operating point signal values
+    real(8), allocatable :: Qs(:,:,:)                    ! Q matrices at all prescribed operating point signal values
+    real(8), allocatable :: Rs(:,:,:)                    ! R matrices at all prescribed operating point signal values
     real(8), allocatable :: x0(:)                        ! nominal state values of the currently-active model
     real(8), allocatable :: u0(:)                        ! nominal control signal values of the currently-active model
     real(8), allocatable :: ud0(:)                       ! nominal disturbance signal values of the currently-active model
     real(8), allocatable :: y0(:)                        ! nominal output signal values of the currently-active model
-    real(8), allocatable :: x0s(:,:)                     ! nominal state values at all prescribed scheduling signal values
-    real(8), allocatable :: u0s(:,:)                     ! nominal control signal values at all prescribed scheduling signal values
-    real(8), allocatable :: ud0s(:,:)                    ! nominal disturbance signal values at all prescribed scheduling signal values
-    real(8), allocatable :: y0s(:,:)                     ! nominal output signal values at all prescribed scheduling signal values
+    real(8), allocatable :: x0s(:,:)                     ! nominal state values at all prescribed operating point signal values
+    real(8), allocatable :: u0s(:,:)                     ! nominal control signal values at all prescribed operating point signal values
+    real(8), allocatable :: ud0s(:,:)                    ! nominal disturbance signal values at all prescribed operating point signal values
+    real(8), allocatable :: y0s(:,:)                     ! nominal output signal values at all prescribed operating point signal values
     real(8), allocatable :: K(:,:)                       ! Kalman filter gain matrix
     real(8), allocatable :: P(:,:)                       ! state covariance matrix
     real(8), allocatable :: x(:)                         ! state
@@ -72,7 +73,7 @@ module state_estimator_library
     integer :: n_offers = 0
     integer :: n_requests = 0
     type(string_container_t), allocatable :: offers(:), requests(:)
-    real(wp), allocatable :: input_buffer(:) !, output_buffer(:) (xhat acts as the output buffer)
+    real(wp), allocatable :: input_buffer(:), output_buffer(:)
     type(kalman_filter_t) :: kalman_filter
   end type
   type(config_t), allocatable :: config(:)
@@ -135,20 +136,17 @@ module state_estimator_library
         ! get sample period
         call hdf5_read_array_auto(fid, "/interface/sample_period", config(context)%sample_period, error)
         if (allocated(error)) exit data_read
-        ! get library input signal names
-        call hdf5_read_varying_string_array_auto(fid, "/interface/input_signals", config(context)%requests, error)
-        if (allocated(error)) exit data_read
-        ! get output signal names
-        call hdf5_read_varying_string_array_auto(fid, "/interface/output_signals", config(context)%offers, error)
-        if (allocated(error)) exit data_read
         ! get measurement signal names
         call hdf5_read_varying_string_array_auto(fid, "/kalman_filter/measurement_signals", config(context)%kalman_filter%measurement_signals, error)
         if (allocated(error)) exit data_read
         ! get control input signal names
         call hdf5_read_varying_string_array_auto(fid, "/kalman_filter/control_signals", config(context)%kalman_filter%control_signals, error)
         if (allocated(error)) exit data_read
-        ! get scheduling signal name
-        call hdf5_read_string_auto(fid, "/kalman_filter/scheduling_signal", config(context)%kalman_filter%scheduling_signal, error)
+        ! get state signal names
+        call hdf5_read_varying_string_array_auto(fid, "/kalman_filter/state_signals", config(context)%kalman_filter%state_signals, error)
+        if (allocated(error)) exit data_read
+        ! get operating point signal name
+        call hdf5_read_string_auto(fid, "/kalman_filter/operating_point_signal", config(context)%kalman_filter%operating_point_signal, error)
         if (allocated(error)) exit data_read
         ! get operating point switch threshold
         call hdf5_read_array_auto(fid, "/kalman_filter/operating_point_switch_threshold", tmp_double, error)
@@ -204,9 +202,6 @@ module state_estimator_library
     end if
     
     ! initialize the variables needed by the library
-    config(context)%n_offers = size(config(context)%offers)
-    config(context)%n_requests = size(config(context)%requests)
-    allocate(config(context)%input_buffer(config(context)%n_requests), source=0.0_wp)
     config(context)%kalman_filter%nx = size(config(context)%kalman_filter%As, 2)
     config(context)%kalman_filter%nu = size(config(context)%kalman_filter%Bs, 2)
     config(context)%kalman_filter%ny = size(config(context)%kalman_filter%Cs, 1)
@@ -240,52 +235,35 @@ module state_estimator_library
     allocate(config(context)%kalman_filter%invR(config(context)%kalman_filter%ny, config(context)%kalman_filter%ny), source = 0.0d0)
     allocate(config(context)%kalman_filter%K(config(context)%kalman_filter%nx, config(context)%kalman_filter%ny), source = 0.0d0)
     
-    ! find the measurement signals in the signal requests list
+    ! initialize input signals:
+    ! measurement signals, control signals, operating point
+    config(context)%n_requests = size(config(context)%kalman_filter%measurement_signals) + &
+      size(config(context)%kalman_filter%control_signals) + 1
+    allocate(config(context)%requests(config(context)%n_requests))
+    allocate(config(context)%input_buffer(config(context)%n_requests), source=0.0_wp)
     do i = 1,config(context)%kalman_filter%ny
-      found = .false.
-      do j = 1,config(context)%n_requests
-        if (config(context)%requests(j)%s .eq. config(context)%kalman_filter%measurement_signals(i)%s) then
-          config(context)%kalman_filter%i_y(i) = j
-          found = .true.
-          exit
-        end if
-      end do
-      if (.not. found) then
-        error = fail('Measurement signal "'// config(context)%kalman_filter%measurement_signals(i)%s // '" must be included in array of signal requests')
-        exit try
-      end if
+      config(context)%requests(i)%s = config(context)%kalman_filter%measurement_signals(i)%s
+      config(context)%kalman_filter%i_y(i) = i
     end do
-    
-    ! find the control signals in the signal requests list
-    do i = 1,config(context)%kalman_filter%nu
-      found = .false.
-      do j = 1,config(context)%n_requests
-        if (config(context)%requests(j)%s .eq. config(context)%kalman_filter%control_signals(i)%s) then
-          config(context)%kalman_filter%i_u(i) = j
-          found = .true.
-          exit
-        end if
-      end do
-      if (.not. found) then
-        error = fail('Control signal "'// config(context)%kalman_filter%control_signals(i)%s // '" must be included in array of signal requests')
-        exit try
-      end if
+    j = config(context)%kalman_filter%ny
+    do i = 1,size(config(context)%kalman_filter%control_signals)
+      config(context)%requests(i+j)%s = config(context)%kalman_filter%control_signals(i)%s
+      config(context)%kalman_filter%i_u(i) = i + j
     end do
+    j = config(context)%kalman_filter%ny + config(context)%kalman_filter%nu
+    config(context)%requests(1+j)%s = config(context)%kalman_filter%operating_point_signal
+    config(context)%kalman_filter%i_op = 1+j
     
-    ! find the scheduling signal in the signal requests list
-    found = .false.
-    do i = 1,config(context)%n_requests
-      if (config(context)%requests(i)%s .eq. config(context)%kalman_filter%scheduling_signal) then
-        config(context)%kalman_filter%i_ss = i
-        found = .true.
-        exit
-      end if
+    ! initialize output signals:
+    ! state estimates, state estimates without operating point
+    config(context)%n_offers = 2 * size(config(context)%kalman_filter%state_signals)
+    allocate(config(context)%offers(config(context)%n_offers))
+    allocate(config(context)%output_buffer(config(context)%n_offers), source=0.0_wp)
+    do i = 1,config(context)%kalman_filter%nx
+      config(context)%offers(i)%s = config(context)%kalman_filter%state_signals(i)%s
+      config(context)%offers(i+config(context)%kalman_filter%nx)%s = "d" // config(context)%kalman_filter%state_signals(i)%s
     end do
-    if (.not. found) then
-      error = fail('Scheduling signal must be included in array of signal requests')
-      exit try
-    end if
-    
+
     ! set values returned to caller
     ! context was assigned above
     sample_period = config(context)%sample_period
@@ -352,7 +330,7 @@ module state_estimator_library
     do i = 1,config(context)%kalman_filter%ny
       y(i) = config(context)%input_buffer(config(context)%kalman_filter%i_y(i))
     end do
-    operating_point = config(context)%input_buffer(config(context)%kalman_filter%i_ss)
+    operating_point = config(context)%input_buffer(config(context)%kalman_filter%i_op)
     ! check if current operating point is closer to another operating point
     io = minloc(abs(config(context)%kalman_filter%operating_points - operating_point), dim=1)
     if (io .ne. config(context)%kalman_filter%io) then
