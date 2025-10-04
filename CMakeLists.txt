@@ -35,11 +35,24 @@ add_subdirectory(prj/iir_filters)
 add_subdirectory(prj/monitor)
 add_subdirectory(prj/n_ary_function)
 add_subdirectory(prj/rosco_controller)
+add_subdirectory(prj/scheduled_matrix_gain)
 add_subdirectory(prj/signal_generator)
 add_subdirectory(prj/signal_renamer)
 add_subdirectory(prj/soft_clipper)
 add_subdirectory(prj/state_estimator)
 add_subdirectory(prj/timing_rig)
 
-install(TARGETS delay dispatch iir_filters monitor n_ary_function rosco_controller signal_generator signal_renamer soft_clipper state_estimator timing_rig
+install(TARGETS 
+                delay 
+                dispatch 
+                iir_filters 
+                monitor 
+                n_ary_function 
+                rosco_controller 
+                scheduled_matrix_gain
+                signal_generator 
+                signal_renamer 
+                soft_clipper 
+                state_estimator 
+                timing_rig
   LIBRARY DESTINATION "${dispatch_binary_path}")
