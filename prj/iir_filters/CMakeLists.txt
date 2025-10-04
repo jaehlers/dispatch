@@ -52,4 +52,4 @@ target_include_directories(iir_filters PRIVATE "${CMAKE_INSTALL_PREFIX}/inc/mod"
 target_link_directories(iir_filters PRIVATE "${CMAKE_INSTALL_PREFIX}/lib")
 
 # set target link libraries
-target_link_libraries(iir_filters error_handling extf polyroots_fortran toml_f)
+target_link_libraries(iir_filters dispatch_types error_handling extf polyroots_fortran toml_f)
