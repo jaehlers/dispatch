@@ -373,6 +373,15 @@ module dispatch_manager
             end do
           end if
         end do
+        ! if no match found yet, then look for signal in the outputs of subsequent libraries (value will be delayed by one sample)
+        do l = n_library, i, -1
+          do k = library(l)%n_offers,1,-1 ! go in reverse order, so that the last version of a signal is used, in case it gets output multiple times by the same library
+            if (library(i)%signal_requests(j)%s .eq. library(l)%signal_offers(k)%s) then
+              library(i)%input_pointers(j)%ptr => library(l)%output_buffer(k)
+              cycle library_requests
+            end if
+          end do
+        end do
         ! error if this signal has no provider
         if (.not. associated(library(i)%input_pointers(j)%ptr)) then
           error = fail("No matching signal offers for signal request '" // library(i)%signal_requests(j)%s // "' from library '" // library(i)%config%given_name //"'")
