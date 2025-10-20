@@ -45,7 +45,6 @@ module state_estimator_library
     real(8), allocatable :: D(:,:)                       ! the currently-active D matrix
     real(8), allocatable :: Q(:,:)                       ! the currently-active Q matrix (process noise covariance)
     real(8), allocatable :: R(:,:)                       ! the currently-active R matrix (measurement noise covariance)
-    real(8), allocatable :: invR(:,:)                    ! the inverse of the currently-active R matrix (measurement noise covariance)
     real(8), allocatable :: As(:,:,:)                    ! A matrices at all prescribed operating point signal values
     real(8), allocatable :: Bs(:,:,:)                    ! B matrices at all prescribed operating point signal values
     real(8), allocatable :: Cs(:,:,:)                    ! C matrices at all prescribed operating point signal values
@@ -58,12 +57,10 @@ module state_estimator_library
     real(8), allocatable :: y0(:)                        ! nominal output signal values of the currently-active model
     real(8), allocatable :: x0s(:,:)                     ! nominal state values at all prescribed operating point signal values
     real(8), allocatable :: u0s(:,:)                     ! nominal control signal values at all prescribed operating point signal values
-    real(8), allocatable :: ud0s(:,:)                    ! nominal disturbance signal values at all prescribed operating point signal values
     real(8), allocatable :: y0s(:,:)                     ! nominal output signal values at all prescribed operating point signal values
     real(8), allocatable :: K(:,:)                       ! Kalman filter gain matrix
     real(8), allocatable :: P(:,:)                       ! state covariance matrix
-    real(8), allocatable :: x(:)                         ! state
-    real(8), allocatable :: xbar(:)                      ! state
+    real(8), allocatable :: eye(:,:)                     ! identity matrix (nx,nx)
     real(8), allocatable :: xhat(:)                      ! state estimate
   end type
   
@@ -213,7 +210,6 @@ module state_estimator_library
     allocate(config(context)%kalman_filter%C(config(context)%kalman_filter%ny,config(context)%kalman_filter%nx), source=0.0d0)
     allocate(config(context)%kalman_filter%D(config(context)%kalman_filter%ny,config(context)%kalman_filter%nu), source=0.0d0)
     allocate(config(context)%kalman_filter%x0(config(context)%kalman_filter%nx), source=0.0d0)
-    allocate(config(context)%kalman_filter%xbar(config(context)%kalman_filter%nx), source=0.0d0)
     allocate(config(context)%kalman_filter%xhat(config(context)%kalman_filter%nx), source=0.0d0)
     allocate(config(context)%kalman_filter%u0(config(context)%kalman_filter%nu), source=0.0d0)
     allocate(config(context)%kalman_filter%y0(config(context)%kalman_filter%ny), source=0.0d0)
@@ -228,8 +224,11 @@ module state_estimator_library
     allocate(config(context)%kalman_filter%P(config(context)%kalman_filter%nx, config(context)%kalman_filter%nx), source = 0.0d0)
     allocate(config(context)%kalman_filter%Q(config(context)%kalman_filter%nx, config(context)%kalman_filter%nx), source = 0.0d0)
     allocate(config(context)%kalman_filter%R(config(context)%kalman_filter%ny, config(context)%kalman_filter%ny), source = 0.0d0)
-    allocate(config(context)%kalman_filter%invR(config(context)%kalman_filter%ny, config(context)%kalman_filter%ny), source = 0.0d0)
     allocate(config(context)%kalman_filter%K(config(context)%kalman_filter%nx, config(context)%kalman_filter%ny), source = 0.0d0)
+    allocate(config(context)%kalman_filter%eye(config(context)%kalman_filter%nx, config(context)%kalman_filter%nx), source=0.0d0)
+    do i=1,config(context)%kalman_filter%nx
+      config(context)%kalman_filter%eye(i,i) = 1.0d0
+    end do
     
     ! initialize input signals:
     ! measurement signals, control signals, operating point
@@ -312,7 +311,8 @@ module state_estimator_library
   real(wp) :: y(config(context)%kalman_filter%ny)
   real(wp) :: operating_point
   real(wp) :: M(config(context)%kalman_filter%nx, config(context)%kalman_filter%nx)
-  real(wp) :: CM(config(context)%kalman_filter%ny, config(context)%kalman_filter%nx)
+  real(wp) :: S(config(context)%kalman_filter%ny, config(context)%kalman_filter%ny)
+  real(wp) :: ytilde(config(context)%kalman_filter%ny)
   type(linalg_state_type) :: linalg_error
   
   try: block
@@ -347,37 +347,38 @@ module state_estimator_library
       config(context)%kalman_filter%D = config(context)%kalman_filter%Ds( :,:,io)
       config(context)%kalman_filter%Q = config(context)%kalman_filter%Qs( :,:,io)
       config(context)%kalman_filter%R = config(context)%kalman_filter%Rs( :,:,io)
-      config(context)%kalman_filter%invR = inv(config(context)%kalman_filter%R, linalg_error)
-      if (linalg_error /= LINALG_SUCCESS) then
-        error = fail('stdlib_linalg error calculating R^-1: ' // linalg_error.print())
-        exit try
+      ! adjust the state estimate for the change in operating point (leave it at zero if this is the first call)
+      if (.not. config(context)%kalman_filter%first_call) then
+        config(context)%kalman_filter%xhat = config(context)%kalman_filter%xhat + &
+          config(context)%kalman_filter%x0s(:,config(context)%kalman_filter%io) - &
+          config(context)%kalman_filter%x0s(:,io)
       end if
-      ! adjust the state estimate for the change in operating point
-      config(context)%kalman_filter%xbar = config(context)%kalman_filter%xbar + &
-        config(context)%kalman_filter%x0s(:,config(context)%kalman_filter%io) - &
-        config(context)%kalman_filter%x0s(:,io)
       ! switch operating point
       config(context)%kalman_filter%io = io
       config(context)%kalman_filter%first_call = .false.
     end if
-    ! compute one recursion of the Kalman filter equations
+    ! compute one recursion of the Kalman filter equations (Joseph-form implementation)
     u = u - config(context)%kalman_filter%u0
     y = y - config(context)%kalman_filter%y0
-    ! measurement update
-    config(context)%kalman_filter%xhat = config(context)%kalman_filter%xbar + &
-      matmul(config(context)%kalman_filter%K, y - matmul(config(context)%kalman_filter%C, config(context)%kalman_filter%xbar) - &
-                                                  matmul(config(context)%kalman_filter%D, u))
-    ! time update
-    config(context)%kalman_filter%xbar = matmul(config(context)%kalman_filter%A, config(context)%kalman_filter%xhat) + &
+
+    ! prediction
+    config(context)%kalman_filter%xhat = matmul(config(context)%kalman_filter%A, config(context)%kalman_filter%xhat) + &
                                          matmul(config(context)%kalman_filter%B, u)
-    M = matmul(config(context)%kalman_filter%A, matmul(config(context)%kalman_filter%P, transpose(config(context)%kalman_filter%A))) + config(context)%kalman_filter%Q ! technically, Bd*Q*Bd^T, but assume here that Bd=I
-    CM = matmul(config(context)%kalman_filter%C, M)
-    config(context)%kalman_filter%P = M - matmul(transpose(CM), matmul(inv(matmul(CM, transpose(config(context)%kalman_filter%C)) + config(context)%kalman_filter%R, linalg_error), CM))
+    config(context)%kalman_filter%P = matmul(config(context)%kalman_filter%A, matmul(config(context)%kalman_filter%P, transpose(config(context)%kalman_filter%A))) + config(context)%kalman_filter%Q
+    
+    ! measurement update
+    ytilde = y - matmul(config(context)%kalman_filter%C, config(context)%kalman_filter%xhat) - matmul(config(context)%kalman_filter%D, u)
+    S = matmul(config(context)%kalman_filter%C, matmul(config(context)%kalman_filter%P, transpose(config(context)%kalman_filter%C))) + config(context)%kalman_filter%R
+    config(context)%kalman_filter%K = matmul(config(context)%kalman_filter%P, matmul(transpose(config(context)%kalman_filter%C), inv(S, linalg_error)))
     if (linalg_error /= LINALG_SUCCESS) then
-      error = fail('stdlib_linalg error calculating (C * M * C^T + R)^-1: ' // linalg_error.print())
+      error = fail('stdlib_linalg error calculating S^-1: ' // linalg_error.print())
       exit try
     end if
-    config(context)%kalman_filter%K = matmul(config(context)%kalman_filter%P, matmul(transpose(config(context)%kalman_filter%C), config(context)%kalman_filter%invR))
+    config(context)%kalman_filter%xhat = config(context)%kalman_filter%xhat + matmul(config(context)%kalman_filter%K, ytilde)
+    M = matmul(config(context)%kalman_filter%K, config(context)%kalman_filter%C)
+    config(context)%kalman_filter%P = matmul(config(context)%kalman_filter%eye - M, matmul(config(context)%kalman_filter%P, transpose(config(context)%kalman_filter%eye - M))) + &
+      matmul(config(context)%kalman_filter%K, matmul(config(context)%kalman_filter%R, transpose(config(context)%kalman_filter%K)))
+    
     ! output the state estimates
     do i = 1,config(context)%kalman_filter%nx
       output_array(i) = config(context)%kalman_filter%xhat(i) + config(context)%kalman_filter%x0(i)
