@@ -262,9 +262,9 @@ module dispatch_manager
       library(i)%hit_buffer(1) = .true.
       library(i)%hit_buffer_index = 0
       ! allocate input (requests) and output (offers) buffers
-      allocate(library(i)%input_buffer(library(i)%n_requests))
+      allocate(library(i)%input_buffer(library(i)%n_requests), source=0.0_wp)
       allocate(library(i)%input_pointers(library(i)%n_requests))
-      allocate(library(i)%output_buffer(library(i)%n_offers))
+      allocate(library(i)%output_buffer(library(i)%n_offers), source=0.0_wp)
       ! get signal offers and requests
       if (library(i)%n_requests .gt. 0) then
         call library(i)%get_signal_requests(library(i)%context, library(i)%signal_requests_string, error_string)
