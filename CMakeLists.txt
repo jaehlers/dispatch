@@ -41,6 +41,7 @@ add_subdirectory(prj/signal_renamer)
 add_subdirectory(prj/soft_clipper)
 add_subdirectory(prj/state_estimator)
 add_subdirectory(prj/timing_rig)
+add_subdirectory(prj/variable_bandwidth_recursive_filter)
 
 install(TARGETS 
                 delay 
@@ -54,5 +55,6 @@ install(TARGETS
                 signal_renamer 
                 soft_clipper 
                 state_estimator 
-                timing_rig
+                timing_rig 
+                variable_bandwidth_recursive_filter
   LIBRARY DESTINATION "${dispatch_binary_path}")
