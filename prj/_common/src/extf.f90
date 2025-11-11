@@ -20,6 +20,11 @@ module extf
   !! container to hold an array of variable-length strings (jagged array)
     character(len=:), allocatable :: s
   end type
+
+  type :: real_array_container_t
+  !! container to hold an array of variable-length real arrays (jagged array)
+    real(wp), allocatable :: a(:)
+  end type
   
   contains
   
